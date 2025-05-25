@@ -1,13 +1,7 @@
 const WebSocket = require('ws'); // Import the WebSocket library
 const { v4: uuidv4 } = require('uuid'); // For generating unique user IDs
-const fetch = require('node-fetch'); // Import node-fetch for making HTTP requests
-
-// Get Google reCAPTCHA Secret Key from environment variables
-// IMPORTANT: You must define this variable in Render.com environment variables!
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
-
-// Define how long a CAPTCHA verification will be considered valid for an IP (e.g., 24 hours)
-const CAPTCHA_VALID_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+// Removed node-fetch as reCAPTCHA is no longer used
+// const fetch = require('node-fetch'); 
 
 // Render.com and similar platforms provide the PORT environment variable.
 // Use 8080 as default for local development.
@@ -28,23 +22,27 @@ const waitingQueue = [];
 // Key: userId, Value: partnerId
 const activePairs = new Map();
 
-// Store the timestamp of the last successful CAPTCHA verification for each IP address
-// Key: IP_Address, Value: Timestamp (Date.now())
-const lastCaptchaSuccess = new Map();
+// --- Rate Limiting Logic ---
+// Store request counts for each IP address
+// Key: IP_Address, Value: { count: number, lastReset: number }
+const ipRequestCounts = new Map();
+
+// Rate limiting constants
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
+const MAX_REQUESTS_PER_WINDOW = 5; // Max 5 requests per IP in the window for 'findPartner'
 
 console.log(`WebSocket server is running on port ${PORT}.`);
 
-// Periodically clean up old CAPTCHA entries from the map
+// Periodically clean up old IP request counts from the map
 setInterval(() => {
     const now = Date.now();
-    for (const [ip, timestamp] of lastCaptchaSuccess.entries()) {
-        // Remove entries older than twice the valid duration (to ensure eventual re-challenge)
-        if (now - timestamp > CAPTCHA_VALID_DURATION_MS * 2) {
-            lastCaptchaSuccess.delete(ip);
-            console.log(`Old CAPTCHA entry cleared: ${ip}`);
+    for (const [ip, data] of ipRequestCounts.entries()) {
+        if (now - data.lastReset > RATE_LIMIT_WINDOW_MS * 2) { // Clear entries older than twice the window
+            ipRequestCounts.delete(ip);
+            console.log(`Old IP request count for ${ip} cleared.`);
         }
     }
-}, CAPTCHA_VALID_DURATION_MS); // Clean up every CAPTCHA_VALID_DURATION_MS
+}, RATE_LIMIT_WINDOW_MS); // Clean up every window duration
 
 /**
  * Checks if two users can be matched based on their gender and lookingFor preferences.
@@ -114,40 +112,6 @@ function handleUserDisconnection(disconnectedUserId, isSkipping = false) {
         console.log(`${disconnectedUserId} removed from connected clients.`);
     } else {
         console.log(`${disconnectedUserId} is skipping and will re-request a partner.`);
-    }
-}
-
-/**
- * Verifies the reCAPTCHA token with Google.
- * @param {string} token The reCAPTCHA response token from the client.
- * @returns {Promise<boolean>} True if verification is successful, false otherwise.
- */
-async function verifyRecaptcha(token) {
-    if (!RECAPTCHA_SECRET_KEY) {
-        console.error('RECAPTCHA_SECRET_KEY environment variable is not defined! CAPTCHA verification cannot be performed.');
-        return false;
-    }
-
-    const verificationUrl = `https://www.google.com/recaptcha/api/siteverify`;
-    const params = new URLSearchParams();
-    params.append('secret', RECAPTCHA_SECRET_KEY);
-    params.append('response', token);
-
-    try {
-        const response = await fetch(verificationUrl, {
-            method: 'POST',
-            body: params,
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        });
-        const data = await response.json();
-        console.log('reCAPTCHA verification response from Google:', data); // Enhanced logging
-        if (!data.success && data['error-codes']) {
-            console.error('reCAPTCHA error codes:', data['error-codes']); // Log specific error codes
-        }
-        return data.success;
-    } catch (error) {
-        console.error('Error during reCAPTCHA verification request to Google:', error); // More specific error message
-        return false;
     }
 }
 
@@ -256,25 +220,27 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
     // Send the newly assigned userId back to the client so they know their ID.
     ws.send(JSON.stringify({ type: 'userId', userId: userId }));
 
-    // Determine if CAPTCHA is required for this IP
+    // --- Rate Limiting Check on Connection (Optional, but good for initial flood) ---
+    // Initialize or update IP request count
     const now = Date.now();
-    let captchaRequired = true;
-    if (lastCaptchaSuccess.has(clientIp)) {
-        const lastSuccessTime = lastCaptchaSuccess.get(clientIp);
-        if (now - lastSuccessTime < CAPTCHA_VALID_DURATION_MS) {
-            captchaRequired = false;
-            console.log(`IP ${clientIp} recently verified, CAPTCHA not required for now.`);
-        } else {
-            console.log(`IP ${clientIp} CAPTCHA duration expired, re-challenging.`);
-        }
-    } else {
-        console.log(`No previous CAPTCHA record for IP ${clientIp}, challenging.`);
+    let ipData = ipRequestCounts.get(clientIp);
+    if (!ipData || (now - ipData.lastReset > RATE_LIMIT_WINDOW_MS)) {
+        ipData = { count: 0, lastReset: now };
     }
-    ws.send(JSON.stringify({ type: 'captchaStatus', required: captchaRequired }));
+    ipData.count++;
+    ipRequestCounts.set(clientIp, ipData);
+
+    if (ipData.count > MAX_REQUESTS_PER_WINDOW * 2) { // A stricter limit for initial connection flood
+        console.warn(`IP ${clientIp} exceeded connection rate limit. Denying connection.`);
+        ws.send(JSON.stringify({ type: 'error', message: 'Too many connection attempts from your IP. Please try again later.' }));
+        ws.close(1008, 'Rate limit exceeded'); // Close connection with a specific code
+        return; // Stop processing this connection
+    }
+    // --- End Rate Limiting Check on Connection ---
 
 
     // Event listener for messages received from this specific client.
-    ws.on('message', async message => { // Marked as async for reCAPTCHA verification
+    ws.on('message', async message => { // Removed async as reCAPTCHA is gone
         console.log(`Message received from user ${userId}: ${message}`);
 
         try {
@@ -291,38 +257,23 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
 
                 case 'findPartner':
                     // Client wants to find a chat partner based on their preferences.
-                    const { gender, lookingFor, recaptchaResponse } = data; // Get recaptchaResponse
+                    const { gender, lookingFor } = data; // recaptchaResponse removed
 
-                    // --- reCAPTCHA Verification Logic ---
-                    const currentClientIp = req.headers['x-forwarded-for'] || ws._socket.remoteAddress; // Get IP for this message
-                    let performRecaptchaVerification = true;
-
-                    if (lastCaptchaSuccess.has(currentClientIp)) {
-                        const lastSuccessTime = lastCaptchaSuccess.get(currentClientIp);
-                        if (Date.now() - lastSuccessTime < CAPTCHA_VALID_DURATION_MS) {
-                            performRecaptchaVerification = false; // Skip verification if recently successful
-                            console.log(`IP ${currentClientIp} recently verified, skipping reCAPTCHA check for findPartner.`);
-                        }
+                    // --- Rate Limiting Check for findPartner requests ---
+                    const currentClientIp = req.headers['x-forwarded-for'] || ws._socket.remoteAddress;
+                    let findPartnerIpData = ipRequestCounts.get(currentClientIp);
+                    if (!findPartnerIpData || (now - findPartnerIpData.lastReset > RATE_LIMIT_WINDOW_MS)) {
+                        findPartnerIpData = { count: 0, lastReset: now };
                     }
+                    findPartnerIpData.count++;
+                    ipRequestCounts.set(currentClientIp, findPartnerIpData);
 
-                    if (performRecaptchaVerification) {
-                        if (!recaptchaResponse) {
-                            ws.send(JSON.stringify({ type: 'error', message: 'CAPTCHA response missing.' }));
-                            console.warn(`User ${userId} (IP: ${currentClientIp}) tried to find partner without CAPTCHA response.`);
-                            return;
-                        }
-
-                        const isHuman = await verifyRecaptcha(recaptchaResponse);
-                        if (!isHuman) {
-                            ws.send(JSON.stringify({ type: 'error', message: 'CAPTCHA verification failed.' }));
-                            console.warn(`User ${userId} (IP: ${currentClientIp}) failed CAPTCHA verification.`);
-                            return;
-                        }
-                        // If verification is successful, record the time for this IP
-                        lastCaptchaSuccess.set(currentClientIp, Date.now());
-                        console.log(`IP ${currentClientIp} CAPTCHA verified and timestamp updated.`);
+                    if (findPartnerIpData.count > MAX_REQUESTS_PER_WINDOW) {
+                        console.warn(`IP ${currentClientIp} exceeded findPartner rate limit.`);
+                        ws.send(JSON.stringify({ type: 'error', message: 'Too many search requests. Please wait a moment and try again.' }));
+                        return; // Stop processing this request
                     }
-                    // --- End of reCAPTCHA Verification Logic ---
+                    // --- End Rate Limiting Check ---
 
                     // Update the connectedClients map with the user's provided preferences.
                     const clientInfo = connectedClients.get(userId);
@@ -401,8 +352,8 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
     });
 
     // Event listener for when a client's WebSocket connection closes.
-    ws.on('close', () => {
-        console.log(`Client ${userId} disconnected.`);
+    ws.on('close', (code, reason) => { // Added code and reason for better logging
+        console.log(`Client ${userId} disconnected. Code: ${code}, Reason: ${reason ? reason.toString() : 'N/A'}`);
         // Call the disconnection handler, indicating it's a full disconnect (not skipping).
         handleUserDisconnection(userId, false);
     });
