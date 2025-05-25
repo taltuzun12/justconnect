@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JustConnect - Random Chat</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Neon ve pembe-mor tonlarıyla stil */
@@ -124,12 +123,6 @@
             background-color: #4B0082; /* Hover'da daha açık mor */
             border-color: #FF69B4; /* Hover'da sıcak pembe kenarlık */
         }
-        /* Style for reCAPTCHA container */
-        .recaptcha-container {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-        }
     </style>
 </head>
 <body>
@@ -160,9 +153,6 @@
             </div>
         </div>
 
-        <div class="recaptcha-container" id="recaptchaWidget">
-            <div class="g-recaptcha" data-sitekey="6LeLlEgrAAAAAPk7iV81dZ7_ksdpQyD68PO_umyJ"></div>
-        </div>
         <button id="startButton" class="w-full py-3 px-6 bg-[#4B0082] text-[#E0BBE4] font-semibold rounded-lg shadow-md hover:bg-[#2A004D] focus:outline-none focus:ring-2 focus:ring-[#FF00FF] focus:ring-opacity-75 transition duration-300 ease-in-out mb-4">
             Start Chatting
         </button>
@@ -202,7 +192,6 @@
         // New gender selection elements
         const genderSelectionDiv = document.getElementById('genderSelection');
         const lookingForSelectionDiv = document.getElementById('lookingForSelection');
-        const recaptchaWidgetDiv = document.getElementById('recaptchaWidget'); // Reference to reCAPTCHA div
 
         // State variables
         let userId = null;
@@ -234,13 +223,8 @@
             startButton.disabled = false; // Enable start button
             genderSelectionDiv.classList.remove('hidden'); // Show gender selection
             lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
-            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
             messagesDiv.innerHTML = ''; // Clear messages
             displayStatus('Select your preferences and click "Start Chatting".');
-            // Reset reCAPTCHA widget
-            if (typeof grecaptcha !== 'undefined' && grecaptcha.getResponse()) {
-                grecaptcha.reset();
-            }
         }
 
         // WebSocket Event Handlers
@@ -275,7 +259,6 @@
                         chatContainer.classList.add('hidden'); // Hide chat container
                         genderSelectionDiv.classList.add('hidden'); // Hide gender selection
                         lookingForSelectionDiv.classList.add('hidden'); // Hide looking for selection
-                        recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget while waiting
                         isSearching = true;
                         break;
 
@@ -290,7 +273,6 @@
                         startButton.textContent = 'End Chat'; // Change button text to end chat
                         startButton.disabled = false;
                         messageInput.focus(); // Focus on input for immediate typing
-                        recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget during chat
                         break;
 
                     case 'message':
@@ -324,8 +306,6 @@
                         // Check if the error message indicates a timeout or cancellation
                         if (errorMessage.toLowerCase().includes('timeout') || errorMessage.toLowerCase().includes('cancelled')) {
                             errorMessage = 'Search timed out. Please select your preferences and try again.';
-                        } else if (errorMessage.toLowerCase().includes('captcha')) {
-                            errorMessage = 'CAPTCHA verification failed. Please try again.';
                         }
                         displayStatus(`Server Error: ${errorMessage}`, 'error');
                         startButton.disabled = false;
@@ -355,7 +335,6 @@
             // When disconnected, reset to a state where user can try to connect again
             genderSelectionDiv.classList.remove('hidden'); // Show gender selection
             lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
-            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
         };
 
         websocket.onerror = (error) => {
@@ -368,7 +347,6 @@
             // On WebSocket error, also return to the initial selection screen
             genderSelectionDiv.classList.remove('hidden'); // Show gender selection
             lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
-            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
         };
 
         // Button Click Handler for Start/End Chat
@@ -396,14 +374,6 @@
                 return;
             }
 
-            // Get reCAPTCHA response
-            const recaptchaResponse = typeof grecaptcha !== 'undefined' ? grecaptcha.getResponse() : '';
-
-            if (!recaptchaResponse) {
-                displayStatus('Please complete the CAPTCHA verification.', 'error');
-                return;
-            }
-
             // Get selected gender and looking for preferences
             userGender = getSelectedRadioValue('your-gender');
             userLookingFor = getSelectedRadioValue('looking-for');
@@ -413,20 +383,18 @@
                 return;
             }
 
-            // Start searching for a partner with preferences, including reCAPTCHA response
+            // Start searching for a partner with preferences
             websocket.send(JSON.stringify({
                 type: 'findPartner',
                 userId: userId,
                 gender: userGender,
                 lookingFor: userLookingFor,
-                recaptchaResponse: recaptchaResponse // Send reCAPTCHA token to server
             }));
             displayStatus('Searching for a partner...', 'info');
             startButton.disabled = true;
             isSearching = true;
             genderSelectionDiv.classList.add('hidden'); // Hide gender selection while searching
             lookingForSelectionDiv.classList.add('hidden'); // Hide looking for selection while searching
-            recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget while searching
         });
 
         // Send message on button click or Enter key press
