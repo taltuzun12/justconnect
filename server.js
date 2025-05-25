@@ -140,10 +140,13 @@ async function verifyRecaptcha(token) {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         });
         const data = await response.json();
-        console.log('reCAPTCHA verification response:', data);
+        console.log('reCAPTCHA verification response from Google:', data); // Enhanced logging
+        if (!data.success && data['error-codes']) {
+            console.error('reCAPTCHA error codes:', data['error-codes']); // Log specific error codes
+        }
         return data.success;
     } catch (error) {
-        console.error('Error during reCAPTCHA verification:', error);
+        console.error('Error during reCAPTCHA verification request to Google:', error); // More specific error message
         return false;
     }
 }
