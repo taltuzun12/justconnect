@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JustConnect - Random Chat</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Neon ve pembe-mor tonlarıyla stil */
+        body {
+            font-family: 'Cinzel', 'Inter', sans-serif; /* Gotik his için Cinzel, fallback Inter */
+            background-color: #0D001A; /* Koyu mor arka plan */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .chat-card {
+            background-color: #1A0033; /* Koyu mor kart arka planı */
+            border: 2px solid #FF00FF; /* Neon pembe çerçeve */
+            border-radius: 0.5rem; /* Daha keskin köşeler */
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.7), 0 4px 10px rgba(138, 43, 226, 0.3); /* Dramatik mor gölgeler */
+            max-width: 500px;
+            width: 100%;
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .chat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to right, #8A2BE2, #FF00FF); /* Mor-pembe geçiş */
+            z-index: 1;
+        }
+        .message-area {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #FF00FF; /* Neon pembe çerçeve */
+            border-radius: 0.3rem; /* Daha keskin kenarlar */
+            padding: 1rem;
+            margin-bottom: 1rem;
+            text-align: left;
+            background-color: #2A004D; /* Çok koyu mor */
+            color: #E0BBE4; /* Açık mor metin */
+        }
+        .message-area p {
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+            word-wrap: break-word;
+            font-weight: 500; /* Daha ağır font */
+        }
+        .message-area p:last-child {
+            margin-bottom: 0;
+        }
+        .message-area p.you {
+            text-align: right;
+            color: #FF69B4; /* Sıcak pembe 'You' mesajları */
+        }
+        .message-area p.partner {
+            text-align: left;
+            color: #9932CC; /* Koyu mor 'Partner' mesajları */
+        }
+        .status-message {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 0.3rem;
+            font-weight: 600; /* Daha belirgin font */
+            border: 1px solid #FF00FF; /* Neon pembe çerçeve */
+        }
+        .status-info {
+            background-color: #4B0082; /* Çok koyu mor */
+            color: #DDA0DD; /* Açık mor metin */
+        }
+        .status-error {
+            background-color: #8A2BE2; /* Mavi mor */
+            color: #FFCCFF; /* Açık pembe-mor metin */
+        }
+
+        /* Yeni eklenen seçim alanları için stil */
+        .selection-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+            color: #E0BBE4; /* Açık mor metin */
+        }
+        .selection-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #FF00FF; /* Neon pembe başlık */
+        }
+        .selection-group div {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap; /* Küçük ekranlarda sarmalama */
+        }
+        .selection-group input[type="radio"] {
+            display: none; /* Radyo düğmelerini gizle */
+        }
+        .selection-group input[type="radio"] + label {
+            background-color: #2A004D; /* Koyu mor arka plan */
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            border: 1px solid #9932CC; /* Orta mor kenarlık */
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            color: #DDA0DD; /* Açık mor metin */
+            font-weight: 500;
+        }
+        .selection-group input[type="radio"]:checked + label {
+            background-color: #8A2BE2; /* Seçildiğinde mor arka plan */
+            border-color: #FF00FF; /* Seçildiğinde neon pembe kenarlık */
+            color: #FFFFFF; /* Seçildiğinde beyaz metin */
+            box-shadow: 0 0 10px rgba(255, 0, 255, 0.5); /* Neon gölge */
+        }
+        .selection-group input[type="radio"]:hover + label {
+            background-color: #4B0082; /* Hover'da daha açık mor */
+            border-color: #FF69B4; /* Hover'da sıcak pembe kenarlık */
+        }
+        /* Style for reCAPTCHA container */
+        .recaptcha-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-card">
+        <h1 class="text-3xl font-bold text-[#E0BBE4] mb-6">JustConnect</h1>
+
+        <div id="genderSelection" class="selection-group">
+            <label for="your-gender">Your Gender:</label>
+            <div>
+                <input type="radio" id="gender-male" name="your-gender" value="Male" checked>
+                <label for="gender-male">Male</label>
+                <input type="radio" id="gender-female" name="your-gender" value="Female">
+                <label for="gender-female">Female</label>
+                <input type="radio" id="gender-other" name="your-gender" value="Other">
+                <label for="gender-other">Other</label>
+            </div>
+        </div>
+
+        <div id="lookingForSelection" class="selection-group">
+            <label for="looking-for">Looking For:</label>
+            <div>
+                <input type="radio" id="looking-male" name="looking-for" value="Male">
+                <label for="looking-male">Male</label>
+                <input type="radio" id="looking-female" name="looking-for" value="Female">
+                <label for="looking-female">Female</label>
+                <input type="radio" id="looking-any" name="looking-for" value="Any" checked>
+                <label for="looking-any">Any</label>
+            </div>
+        </div>
+
+        <div class="recaptcha-container" id="recaptchaWidget">
+            <div class="g-recaptcha" data-sitekey="YOUR_SITE_KEY"></div>
+        </div>
+        <button id="startButton" class="w-full py-3 px-6 bg-[#4B0082] text-[#E0BBE4] font-semibold rounded-lg shadow-md hover:bg-[#2A004D] focus:outline-none focus:ring-2 focus:ring-[#FF00FF] focus:ring-opacity-75 transition duration-300 ease-in-out mb-4">
+            Start Chatting
+        </button>
+
+        <div id="status" class="status-message status-info">Connecting to server...</div>
+        <div id="user-id-display" class="text-sm text-[#DDA0DD] mt-2 mb-4 hidden">Your User ID: <span id="currentUserId"></span></div>
+
+        <div id="chatContainer" class="hidden">
+            <h2 class="text-2xl font-semibold text-[#FF69B4] mb-4">Chatting with a Random User</h2>
+            <div id="messages" class="message-area mb-4"></div>
+            <div class="flex space-x-2 mb-4">
+                <input type="text" id="messageInput" placeholder="Type your message..." class="flex-1 p-3 border border-[#9932CC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF00FF] bg-[#2A004D] text-[#E0BBE4]">
+                <button onclick="sendMessage()" class="py-3 px-6 bg-[#8A2BE2] text-[#E0BBE4] font-semibold rounded-lg shadow-md hover:bg-[#4B0082] focus:outline-none focus:ring-2 focus:ring-[#FF00FF] focus:ring-opacity-75 transition duration-300 ease-in-out">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // **IMPORTANT:** This is the client-side JavaScript.
+        // It needs a separate WebSocket server to function correctly.
+        // Ensure you have a server running at the specified URL.
+
+        // WebSocket server URL (replace with your actual server URL)
+        const websocket = new WebSocket('ws://localhost:8080');
+
+        // Get DOM elements
+        const startButton = document.getElementById('startButton');
+        const statusDiv = document.getElementById('status');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const currentUserIdSpan = document.getElementById('currentUserId');
+        const chatContainer = document.getElementById('chatContainer');
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+
+        // New gender selection elements
+        const genderSelectionDiv = document.getElementById('genderSelection');
+        const lookingForSelectionDiv = document.getElementById('lookingForSelection');
+        const recaptchaWidgetDiv = document.getElementById('recaptchaWidget'); // Reference to reCAPTCHA div
+
+        // State variables
+        let userId = null;
+        let partnerId = null;
+        let isSearching = false;
+        let isConnected = false;
+        let userGender = null; // Store user's selected gender
+        let userLookingFor = null; // Store user's selected lookingFor preference
+
+        // Function to display status messages
+        function displayStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type === 'error' ? 'status-error' : 'status-info'}`;
+            statusDiv.style.display = 'block';
+        }
+
+        // Helper to get selected radio button value
+        function getSelectedRadioValue(name) {
+            const radios = document.querySelectorAll(`input[name="${name}"]:checked`);
+            return radios.length > 0 ? radios[0].value : null;
+        }
+
+        // Function to reset UI to initial state (gender selection)
+        function resetUIForNewSearch() {
+            partnerId = null;
+            isSearching = false;
+            chatContainer.classList.add('hidden');
+            startButton.textContent = 'Start Chatting';
+            startButton.disabled = false; // Enable start button
+            genderSelectionDiv.classList.remove('hidden'); // Show gender selection
+            lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
+            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
+            messagesDiv.innerHTML = ''; // Clear messages
+            displayStatus('Select your preferences and click "Start Chatting".');
+            // Reset reCAPTCHA widget
+            if (typeof grecaptcha !== 'undefined' && grecaptcha.getResponse()) {
+                grecaptcha.reset();
+            }
+        }
+
+        // WebSocket Event Handlers
+        websocket.onopen = () => {
+            console.log('Client: Connected to WebSocket server.');
+            isConnected = true;
+            displayStatus('Requesting User ID...');
+            startButton.textContent = 'Requesting User ID...';
+            startButton.disabled = true; // Disable until we get the user ID
+            // Send a registration message to the server
+            websocket.send(JSON.stringify({ type: 'register' }));
+        };
+
+        websocket.onmessage = (event) => {
+            console.log('Client: Raw message received:', event.data);
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Client: Parsed data:', data);
+
+                switch (data.type) {
+                    case 'userId':
+                        userId = data.userId;
+                        console.log('Client: Your User ID:', userId);
+                        currentUserIdSpan.textContent = userId; // Display full user ID
+                        userIdDisplay.classList.remove('hidden'); // Show user ID
+                        resetUIForNewSearch(); // Show gender selection and enable start button
+                        break;
+
+                    case 'waiting':
+                        displayStatus('Waiting for another user...');
+                        startButton.disabled = true;
+                        chatContainer.classList.add('hidden'); // Hide chat container
+                        genderSelectionDiv.classList.add('hidden'); // Hide gender selection
+                        lookingForSelectionDiv.classList.add('hidden'); // Hide looking for selection
+                        recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget while waiting
+                        isSearching = true;
+                        break;
+
+                    case 'foundPartner':
+                        partnerId = data.partnerId;
+                        console.log('Client: Connected with User ID:', partnerId);
+                        displayStatus(`Connected with partner: ${partnerId}`, 'info'); // Show full partner ID
+                        statusDiv.classList.add('hidden'); // Hide status div after connection
+                        chatContainer.classList.remove('hidden'); // Show chat container
+                        messagesDiv.innerHTML = ''; // Clear previous messages
+                        isSearching = false;
+                        startButton.textContent = 'End Chat'; // Change button text to end chat
+                        startButton.disabled = false;
+                        messageInput.focus(); // Focus on input for immediate typing
+                        recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget during chat
+                        break;
+
+                    case 'message':
+                        // Only display messages from the partner
+                        if (data.senderId !== userId) {
+                            const newMessage = document.createElement('p');
+                            newMessage.className = 'partner'; // Apply partner styling
+                            newMessage.textContent = `Partner (${data.senderId}): ${data.text}`; // Show full partner ID
+                            messagesDiv.appendChild(newMessage);
+                        }
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+                        break;
+
+                    case 'userLeft':
+                        if (data.userId === partnerId) {
+                            displayStatus('Your partner has left the chat. Click "Start Chatting" to find a new partner.', 'info');
+                            resetUIForNewSearch(); // Go back to gender selection
+                        }
+                        break;
+                    case 'searchCancelled':
+                        displayStatus('Search timed out. Please select your preferences and try again.', 'info');
+                        resetUIForNewSearch(); // Go back to the main selection page
+                        break;
+                    case 'chatEnded': // New case to handle server confirmation of chat ending
+                        console.log('Client: Chat ended by user, received confirmation from server.');
+                        displayStatus('Chat ended. Click "Start Chatting" to find a new partner.', 'info');
+                        resetUIForNewSearch(); // Now safely reset UI after server confirmation
+                        break;
+                    case 'error':
+                        let errorMessage = data.message || 'An unknown error occurred.';
+                        // Check if the error message indicates a timeout or cancellation
+                        if (errorMessage.toLowerCase().includes('timeout') || errorMessage.toLowerCase().includes('cancelled')) {
+                            errorMessage = 'Search timed out. Please select your preferences and try again.';
+                        } else if (errorMessage.toLowerCase().includes('captcha')) {
+                            errorMessage = 'CAPTCHA verification failed. Please try again.';
+                        }
+                        displayStatus(`Server Error: ${errorMessage}`, 'error');
+                        startButton.disabled = false;
+                        isSearching = false;
+                        resetUIForNewSearch(); // On error, also return to the gender selection screen
+                        break;
+                    default:
+                        console.warn('Client: Unknown message type from server:', data);
+                        displayStatus('Unknown message from server. Check console for details.', 'error');
+                        break;
+                }
+            } catch (error) {
+                console.error('Client: Error processing message:', error, 'Raw data:', event.data);
+                displayStatus(`Error processing server message: ${error.message}. Raw data: "${event.data}"`, 'error');
+            }
+        };
+
+        websocket.onclose = () => {
+            console.log('Client: Disconnected from WebSocket server.');
+            isConnected = false;
+            displayStatus('Disconnected from server.', 'error');
+            startButton.textContent = 'Disconnected';
+            startButton.disabled = true;
+            chatContainer.classList.add('hidden');
+            isSearching = false;
+            userIdDisplay.classList.add('hidden'); // Hide user ID on disconnect
+            // When disconnected, reset to a state where user can try to connect again
+            genderSelectionDiv.classList.remove('hidden'); // Show gender selection
+            lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
+            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
+        };
+
+        websocket.onerror = (error) => {
+            console.error('Client: WebSocket Error:', error);
+            displayStatus('WebSocket connection error occurred. Please try refreshing the page.', 'error');
+            startButton.textContent = 'Error';
+            startButton.disabled = true;
+            chatContainer.classList.add('hidden');
+            isSearching = false;
+            // On WebSocket error, also return to the initial selection screen
+            genderSelectionDiv.classList.remove('hidden'); // Show gender selection
+            lookingForSelectionDiv.classList.remove('hidden'); // Show looking for selection
+            recaptchaWidgetDiv.classList.remove('hidden'); // Show reCAPTCHA widget
+        };
+
+        // Button Click Handler for Start/End Chat
+        startButton.addEventListener('click', () => {
+            if (!isConnected) {
+                displayStatus('Not connected to the server yet. Please wait.', 'error');
+                return;
+            }
+            if (!userId) {
+                displayStatus('Waiting for your User ID from the server...', 'info');
+                return;
+            }
+
+            if (partnerId) {
+                // If already connected, this button now means "End Chat"
+                // Send leaveChat message, disable button, and wait for server confirmation to reset UI
+                websocket.send(JSON.stringify({ type: 'leaveChat', userId: userId, partnerId: partnerId }));
+                displayStatus('Ending chat...', 'info'); // Provide immediate feedback
+                startButton.disabled = true; // Disable button while waiting for server confirmation
+                return;
+            }
+
+            if (isSearching) {
+                displayStatus('Already searching for a partner... Please wait.', 'info');
+                return;
+            }
+
+            // Get reCAPTCHA response
+            const recaptchaResponse = typeof grecaptcha !== 'undefined' ? grecaptcha.getResponse() : '';
+
+            if (!recaptchaResponse) {
+                displayStatus('Please complete the CAPTCHA verification.', 'error');
+                return;
+            }
+
+            // Get selected gender and looking for preferences
+            userGender = getSelectedRadioValue('your-gender');
+            userLookingFor = getSelectedRadioValue('looking-for');
+
+            if (!userGender || !userLookingFor) {
+                displayStatus('Please select your gender and who you are looking for.', 'error');
+                return;
+            }
+
+            // Start searching for a partner with preferences, including reCAPTCHA response
+            websocket.send(JSON.stringify({
+                type: 'findPartner',
+                userId: userId,
+                gender: userGender,
+                lookingFor: userLookingFor,
+                recaptchaResponse: recaptchaResponse // Send reCAPTCHA token to server
+            }));
+            displayStatus('Searching for a partner...', 'info');
+            startButton.disabled = true;
+            isSearching = true;
+            genderSelectionDiv.classList.add('hidden'); // Hide gender selection while searching
+            lookingForSelectionDiv.classList.add('hidden'); // Hide looking for selection while searching
+            recaptchaWidgetDiv.classList.add('hidden'); // Hide reCAPTCHA widget while searching
+        });
+
+        // Send message on button click or Enter key press
+        function sendMessage() {
+            if (websocket.readyState === WebSocket.OPEN && messageInput.value.trim() && partnerId) {
+                const message = messageInput.value.trim();
+                if (message) {
+                    websocket.send(JSON.stringify({
+                        type: 'message',
+                        senderId: userId,
+                        receiverId: partnerId,
+                        text: message
+                    }));
+                    const newMessage = document.createElement('p');
+                    newMessage.className = 'you'; // Apply 'you' styling
+                    newMessage.textContent = `You: ${message}`;
+                    messagesDiv.appendChild(newMessage);
+                    messageInput.value = '';
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to bottom
+                }
+            } else if (!partnerId) {
+                displayStatus('You are not connected to a partner yet.', 'error');
+            }
+        }
+
+        // Allow sending message with Enter key
+        messageInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
