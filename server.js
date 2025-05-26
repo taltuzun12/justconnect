@@ -89,11 +89,24 @@ function handleUserDisconnection(disconnectedUserId, isSkipping = false) {
 
     // Clear any pending search timeout for this user.
     const clientInfo = connectedClients.get(disconnectedUserId);
-    if (clientInfo && clientInfo.searchTimeout) {
-        clearTimeout(clientInfo.searchTimeout);
-        clientInfo.searchTimeout = null;
-        console.log(`Search timeout cleared for user ${disconnectedUserId}.`);
+    if (clientInfo) { // Ensure clientInfo exists before accessing properties
+        if (clientInfo.searchTimeout) {
+            clearTimeout(clientInfo.searchTimeout);
+            clientInfo.searchTimeout = null;
+            console.log(`Search timeout cleared for user ${disconnectedUserId}.`);
+        }
+
+        // IMPORTANT FIX: Reset gender and lookingFor preferences if not a full disconnection.
+        // This ensures the user is treated as new for matching purposes after leaving a chat.
+        if (!isSkipping) { // This condition is true when 'leaveChat' is called
+            clientInfo.gender = null; // Reset gender preference
+            clientInfo.lookingFor = null; // Reset lookingFor preference
+            // No need for connectedClients.set(disconnectedUserId, clientInfo) here
+            // because Maps store references to objects, so modifying clientInfo directly updates the map.
+            console.log(`Reset preferences for user ${disconnectedUserId} after leaving chat.`);
+        }
     }
+
 
     // Check if the disconnected user was part of an active chat pair.
     const partnerId = activePairs.get(disconnectedUserId);
@@ -114,18 +127,8 @@ function handleUserDisconnection(disconnectedUserId, isSkipping = false) {
         }
     }
 
-    // If the user is not just skipping (i.e., they are fully disconnecting),
-    // remove their entry from the connectedClients map.
-    // If they are skipping, their WebSocket object is retained as they will immediately
-    // send a new 'findPartner' request.
-    if (!isSkipping) {
-        connectedClients.delete(disconnectedUserId);
-        console.log(`${disconnectedUserId} removed from connected clients.`);
-        // After a user fully disconnects, update all remaining clients with the new active user count.
-        broadcastActiveUserCount();
-    } else {
-        console.log(`${disconnectedUserId} is skipping and will re-request a partner.`);
-    }
+    // The connectedClients.delete(disconnectedUserId) is now ONLY in ws.on('close').
+    // The broadcast is handled by ws.on('close') for full disconnects.
 }
 
 /**
@@ -300,7 +303,8 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
                     if (clientInfo) {
                         clientInfo.gender = gender;
                         clientInfo.lookingFor = lookingFor;
-                        connectedClients.set(userId, clientInfo); // Update the map with new info
+                        // No need to set connectedClients.set(userId, clientInfo) again here
+                        // as clientInfo is a reference to the object in the map.
                     } else {
                         // Log an error if the client's info isn't found (shouldn't happen if userId is correctly managed).
                         console.error(`Error: Client ${userId} not found in connectedClients map.`);
@@ -334,7 +338,7 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
                             ws.send(JSON.stringify({ type: 'error', message: 'Your partner has disconnected.' }));
                             console.log(`Failed to send message: Partner ${receiverId} not found or not open.`);
                             // Clean up the pairing if the partner unexpectedly disconnected.
-                            handleUserDisconnection(receiverId);
+                            handleUserDisconnection(receiverId, false); // Treat as a full disconnect for partner's side
                         }
                     } else {
                         // If no partner is found for the sender, notify them.
@@ -349,8 +353,10 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
                     const leaverWs = connectedClients.get(leaverId)?.ws; // Get the WebSocket for the user who is leaving
                     const partnerIdOnLeave = activePairs.get(leaverId); // Get partner ID before handling disconnection
 
-                    // Handle disconnection logic, which also notifies the partner
-                    handleUserDisconnection(leaverId, false); // 'false' because it's a full leave, not skipping
+                    // Handle disconnection logic, which also notifies the partner.
+                    // IMPORTANT: We explicitly set isSkipping to false here. This will trigger
+                    // the preference reset in handleUserDisconnection for the leaver.
+                    handleUserDisconnection(leaverId, false);
 
                     // Send a confirmation back to the user who initiated the leave
                     if (leaverWs && leaverWs.readyState === WebSocket.OPEN) {
@@ -390,14 +396,20 @@ wss.on('connection', (ws, req) => { // 'req' is added to get the client IP
     // Event listener for when a client's WebSocket connection closes.
     ws.on('close', (code, reason) => { // Added code and reason for better logging
         console.log(`Client ${userId} disconnected. Code: ${code}, Reason: ${reason ? reason.toString() : 'N/A'}`);
-        // Call the disconnection handler, indicating it's a full disconnect (not skipping).
-        handleUserDisconnection(userId, false);
+        // This is the ONLY place where the client should be removed from connectedClients.
+        connectedClients.delete(userId);
+        console.log(`${userId} removed from connected clients (due to WebSocket close).`);
+        // Call the disconnection handler to clean up queue/pairs and notify partner.
+        // We pass 'true' for isSkipping here because the client is no longer connected via WS.
+        // This prevents handleUserDisconnection from trying to reset preferences on a non-existent clientInfo.
+        handleUserDisconnection(userId, true);
+        broadcastActiveUserCount(); // Broadcast updated count after a client truly disconnects
     });
 
     // Event listener for WebSocket errors.
     ws.on('error', error => {
         console.error(`WebSocket error for client ${userId}:`, error);
-        // Clean up user state on error, treating it as a full disconnect.
-        handleUserDisconnection(userId, false);
+        // On error, the 'close' event will usually follow, which handles cleanup.
+        // No need to call handleUserDisconnection directly here.
     });
 });
