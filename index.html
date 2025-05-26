@@ -123,6 +123,19 @@
             background-color: #4B0082; /* Hover'da daha açık mor */
             border-color: #FF69B4; /* Hover'da sıcak pembe kenarlık */
         }
+        /* Active user count style */
+        #activeUserCount {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: #00FF00; /* Neon yeşili */
+            padding: 0.5rem;
+            border-radius: 0.3rem;
+            font-size: 0.9rem;
+            font-weight: bold;
+            z-index: 2; /* Ensure it's on top */
+        }
     </style>
 </head>
 <body>
@@ -170,6 +183,8 @@
                 </button>
             </div>
         </div>
+
+        <div id="activeUserCount">Active Users: <span id="userCount">0</span></div>
     </div>
 
     <script>
@@ -192,6 +207,10 @@
         // New gender selection elements
         const genderSelectionDiv = document.getElementById('genderSelection');
         const lookingForSelectionDiv = document.getElementById('lookingForSelection');
+
+        // Active user count display
+        const activeUserCountDiv = document.getElementById('activeUserCount');
+        const userCountSpan = document.getElementById('userCount');
 
         // State variables
         let userId = null;
@@ -300,6 +319,10 @@
                         console.log('Client: Chat ended by user, received confirmation from server.');
                         displayStatus('Chat ended. Click "Start Chatting" to find a new partner.', 'info');
                         resetUIForNewSearch(); // Now safely reset UI after server confirmation
+                        break;
+                    case 'activeUsers': // New case to receive active user count
+                        const activeCount = data.count;
+                        userCountSpan.textContent = activeCount;
                         break;
                     case 'error':
                         let errorMessage = data.message || 'An unknown error occurred.';
